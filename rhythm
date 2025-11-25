@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Basket Rhythm — Improved</title>
+<style>
+  :root { --bg:#111; --panel: rgba(0,0,0,0.6); }
+  html,body{height:100%;margin:0;background:var(--bg);color:#fff;font-family:sans-serif}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:18px;box-sizing:border-box}
+  #circle{
+    width:70vmin;height:70vmin;border-radius:50%;
+    background:crimson;display:flex;align-items:center;justify-content:center;
+    transition:background .08s linear;
+    will-change:transform,opacity;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  .controls{
+    position:fixed;top:12px;left:50%;transform:translateX(-50%);
+    background:var(--panel);padding:10px 14px;border-radius:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  }
+  label{display:flex;align-items:center;gap:6px;font-size:14px}
+  input[type="range"]{width:120px}
+  button{padding:8px 12px;font-size:14px;border-radius:8px;border:0;background:#2b2b2b;color:#fff}
+  .small{font-size:12px;padding:6px 8px}
+  #count{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9vmin;font-weight:700;pointer-events:none}
+  @media(max-width:520px){ .controls{font-size:13px;padding:8px}}
+</style>
+</head>
+<body>
+  <div class="controls">
+    <label>BPM
+      <select id="bpmSelect"></select>
+    </label>
+
+    <label>色モード
+      <select id="colorMode">
+        <option value="2">2色（赤/青）</option>
+        <option value="3">3色（赤/青/緑）</option>
+        <option value="4">4色（赤/青/緑/黄）</option>
+      </select>
+    </label>
+
+    <label>音量
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8">
+    </label>
+
+    <label class="small"><input type="checkbox" id="fsToggle" checked> タップでフルスクリーン</label>
+
+    <button id="startBtn">開始</button>
+    <button id="stopBtn" class="small">停止</button>
+  </div>
+
+  <div class="wrap">
+    <div id="circle" aria-hidden="true"></div>
+    <div id="count" style="display:none"></div>
+  </div>
+
+  <!-- 音源（ホイッスル） -->
+  <audio id="whistle" preload="auto">
+    <source src="https://www.soundjay.com/human/sounds/whistle-blow-01.mp3" type="audio/mpeg">
+  </audio>
+
+<script>
+/* ---------- 初期セットアップ ---------- */
+const circle = document.getElementById('circle');
+const whistle = document.getElementById('whistle');
+const bpmSelect = document.getElementById('bpmSelect');
+const colorMode = document.getElementById('colorMode');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const vol = document.getElementById('vol');
+const fsToggle = document.getElementById('fsToggle');
+const countEl = document.getElementById('count');
+
+for(let b=60;b<=100;b+=5){
+  const o=document.createElement('option'); o.value=b; o.textContent=b;
+  bpmSelect.appendChild(o);
+}
+bpmSelect.value = 60;
+
+let intervalId = null;
+let nextTimeout = null;
+let audioEnabled = false;
+let currentAnimations = [];
+let running = false;
+
+const colorSets = {
+  2: ['#e53935','#1e88e5'],             // 赤,青
+  3: ['#e53935','#1e88e5','#43a047'],   // 赤,青,緑
+  4: ['#e53935','#1e88e5','#43a047','#fbc02d'] // 赤,青,緑,黄
+};
+
+/* ---------- 音許可（モバイル対策） ---------- */
+function enableAudioOnce(){
+  if(audioEnabled) return Promise.resolve();
+  // try play/pause to unlock audio
+  return whistle.play().then(()=> {
+    whistle.pause();
+    whistle.currentTime = 0;
+    audioEnabled = true;
+  }).catch(()=> {
+    // 失敗しても無視（ユーザー操作が必要なケースは別途）
+    audioEnabled = false;
+  });
+}
+
+/* ---------- フルスクリーン ---------- */
+function requestFullScreen(){
+  if(!fsToggle.checked) return;
+  const el = document.documentElement;
+  if(!document.fullscreenElement){
+    if(el.requestFullscreen) el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if(el.msRequestFullscreen) el.msRequestFullscreen();
+  }
+}
+document.body.addEventListener('click', requestFullScreen, {passive:true});
+document.body.addEventListener('touchstart', requestFullScreen, {passive:true});
+
+/* ---------- アニメーション（縮む -> バウンドで戻る） ---------- */
+function clearCurrentAnims(){
+  currentAnimations.forEach(a=>{ try{ a.cancel(); }catch(e){} });
+  currentAnimations = [];
+}
+
+function animateBeat(intervalMs){
+  // intervalMs = full time between beats
+  const half = intervalMs / 2;
+  // shrink duration = half, return (bounce) = half
+  const shrinkDuration = Math.max(40, Math.round(half)); // min clamp
+  const returnDuration = Math.max(40, Math.round(half));
+
+  // cancel previous animations just in case
+  clearCurrentAnims();
+
+  // shrink (fast, ease-out)
+  const a1 = circle.animate([
+    { transform: 'scale(1)', opacity: 1 },
+    { transform: 'scale(0.58)', opacity: 0.7 }
+  ], { duration: shrinkDuration, easing: 'cubic-bezier(.2,.9,.1,1)', fill: 'forwards' });
+
+  // after shrink finishes, do bounce return
+  a1.finished.then(()=> {
+    // bounce keyframes: slight overshoot then settle
+    const a2 = circle.animate([
+      { transform: 'scale(0.58)' },
+      { transform: 'scale(1.12)' , offset: 0.45 },
+      { transform: 'scale(0.94)' , offset: 0.8 },
+      { transform: 'scale(1)' , offset: 1 }
+    ], { duration: returnDuration, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
+
+    currentAnimations.push(a2);
+    // cleanup when done
+    a2.finished.finally(()=> {
+      currentAnimations = currentAnimations.filter(x=>x!==a2);
+    });
+  }).catch(()=>{ /* ignore */ });
+
+  currentAnimations.push(a1);
+}
+
+/* ---------- ビートを鳴らす（色切替 + 音 + アニメ） ---------- */
+function doBeat(intervalMs){
+  // set color
+  const mode = colorMode.value;
+  const colors = colorSets[mode] || colorSets[2];
+  const col = colors[Math.floor(Math.random()*colors.length)];
+  circle.style.background = col;
+
+  // play sound if enabled
+  if(audioEnabled){
+    try{
+      whistle.pause();
+      whistle.currentTime = 0;
+      whistle.volume = parseFloat(vol.value);
+      whistle.play().catch(()=>{ /* ignore */ });
+    }catch(e){}
+  }
+
+  // animate
+  animateBeat(intervalMs);
+}
+
+/* ---------- リズム開始 / 停止 ---------- */
+function startRhythmWithCountdown(){
+  if(running) return;
+  // unlock audio
+  enableAudioOnce().finally(()=> {
+    // simple 3-2-1 countdown visual
+    let cnt = 3;
+    countEl.style.display='block';
+    countEl.textContent = cnt;
+    const bpm = parseInt(bpmSelect.value);
+    const intervalMs = Math.round(60000 / bpm);
+
+    const cdTimer = setInterval(()=>{
+      cnt--;
+      if(cnt>0){
+        countEl.textContent = cnt;
+      }else{
+        clearInterval(cdTimer);
+        countEl.style.display='none';
+        running = true;
+        // do first beat immediately
+        doBeat(intervalMs);
+        // schedule subsequent beats at interval
+        intervalId = setInterval(()=> doBeat(intervalMs), intervalMs);
+      }
+    }, 700); // 700ms per count for snappy feel
+  });
+}
+
+function stopRhythm(){
+  if(intervalId) { clearInterval(intervalId); intervalId = null; }
+  clearCurrentAnims();
+  // ensure circle returns to normal
+  circle.style.transform = 'scale(1)';
+  circle.style.opacity = '1';
+  running = false;
+}
+
+/* ---------- UIイベント ---------- */
+startBtn.addEventListener('click', startRhythmWithCountdown);
+stopBtn.addEventListener('click', stopRhythm);
+
+// stop on page hide
+document.addEventListener('visibilitychange', ()=> {
+  if(document.hidden) stopRhythm();
+});
+
+// cleanup on unload
+window.addEventListener('beforeunload', ()=> { stopRhythm(); });
+
+</script>
+</body>
+</html>
