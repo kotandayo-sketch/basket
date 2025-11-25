@@ -110,7 +110,16 @@ function startRhythm() {
 
         setTimeout(() => {
             circle.style.transform = "scale(1)";
-        }, interval * 0.55);
+        }, interval * 0.15);
+
+        setTimeout(() => {
+            circle.style.transform = "scale(1.15)";
+        }, interval * 0.15);
+
+        setTimeout(() => {
+            circle.style.transform = "scale(1)";
+        }, interval * 0.15);
+
 
     }, interval);
 }
