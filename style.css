@@ -2,7 +2,7 @@
 position: fixed;
 top: 5px;   /* さらに上へ */
 left: 5px;  /* さらに左へ */
-width: 100px; /* 小さくする */
+width: 10px; /* 小さくする */
 opacity: 0.9;
 z-index: 9999;
 }
