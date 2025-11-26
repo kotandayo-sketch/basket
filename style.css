@@ -1,8 +1,8 @@
 .logo {
   position: fixed;
-  top: 5px;   /* さらに上へ */
-  left: 5px;  /* さらに左へ */
-  width: 35px; /* 小さくする */
+  top: 15px;   /* さらに上へ */
+  left: 15px;  /* さらに左へ */
+  width: 60px; /* 小さくする */
   opacity: 0.9;
   z-index: 9999;
 }
