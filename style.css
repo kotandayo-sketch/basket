@@ -1,9 +1,12 @@
 <style>
-.logo {
-  position: fixed;
-  top: 5px;   /* さらに上へ */
-  left: 5px;  /* さらに左へ */
-  width: 10px; /* 小さくする */
-  opacity: 0.9;
-  z-index: 9999;
+  body {
+    .logo {
+    position: fixed;
+    top: 5px;   /* さらに上へ */
+    left: 5px;  /* さらに左へ */
+    width: 10px; /* 小さくする */
+    opacity: 0.9;
+    z-index: 9999;
 }
+  }
+</style>
